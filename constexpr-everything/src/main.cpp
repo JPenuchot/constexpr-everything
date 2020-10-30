@@ -15,7 +15,7 @@
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
-static llvm::cl::OptionCategory MyToolCategory("my-tool options");
+static llvm::cl::OptionCategory MyToolCategory("Constexpr-everything Options");
 
 // CommonOptionsParser declares HelpMessage with a description of the common
 // command-line options related to the compilation database and input files.
@@ -39,13 +39,14 @@ public:
   bool VisitDecl(clang::Decl* d_ptr)
   {
     // Safety first
-    if(!d_ptr)
+    if (!d_ptr)
       return true;
 
     // Is it a function declaration ?
     if (clang::isa<clang::FunctionDecl>(*d_ptr))
       // Not constexpr yet ?
-      if (auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr); !fd_ptr->isConstexpr())
+      if (auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr);
+          !fd_ptr->isConstexpr())
         // Rewrite
         rewriter_.InsertTextBefore(fd_ptr->getLocation(), "constexpr ");
 
@@ -89,12 +90,7 @@ public:
     return true;
   }
 
-  ~consumer_t()
-  {
-    auto r_buf =
-      rewriter_.getRewriteBufferFor(rewriter_.getSourceMgr().getMainFileID());
-    std::ofstream(in_file_.str(), std::ios::trunc) << std::string(r_buf->begin(), r_buf->end()) << '\n';
-  }
+  ~consumer_t() { rewriter_.overwriteChangedFiles(); }
 };
 
 class action_t : public clang::ASTFrontendAction
