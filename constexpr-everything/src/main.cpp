@@ -62,15 +62,13 @@ public:
         clang::Rewriter(compiler.getSourceManager(), compiler.getLangOpts()))
   {}
 
-  // Override the method that gets called for each parsed top-level
-  // declaration.
   virtual bool HandleTopLevelDecl(clang::DeclGroupRef dg_ref)
   {
     auto const& sm = compiler_.getSourceManager();
     auto const mf_id = sm.getMainFileID();
 
     for (clang::Decl* decl_ptr : dg_ref)
-      // Only watch the current file
+      // Rewrite current file only
       if (sm.getFileID(decl_ptr->getLocation()) == mf_id)
         constexprer_.TraverseDecl(decl_ptr);
 
