@@ -11,7 +11,6 @@
 
 //#include <iostream>
 #include <fstream>
-#include <string_view>
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
