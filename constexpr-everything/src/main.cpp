@@ -3,6 +3,7 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Rewrite/Core/Rewriter.h"
+#include "clang/Sema/Sema.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
 
@@ -19,10 +20,12 @@ static llvm::cl::extrahelp more_help("\nMake everything constexpr.\n");
 class constexprer_t : public clang::RecursiveASTVisitor<constexprer_t>
 {
   clang::Rewriter rewriter_;
+  clang::CompilerInstance& comp_inst_;
 
 public:
-  constexprer_t(clang::Rewriter rewriter)
+  constexprer_t(clang::Rewriter rewriter, clang::CompilerInstance& comp_inst)
     : rewriter_(std::move(rewriter))
+    , comp_inst_(comp_inst)
   {}
 
   // Set the method that gets called for each declaration node in the AST
@@ -36,7 +39,10 @@ public:
     if (clang::isa<clang::FunctionDecl>(*d_ptr)) {
       auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr);
       // Is it not constexpr yet ?
-      if (!fd_ptr->isConstexpr())
+      auto& sema = comp_inst_.getSema();
+      if (!fd_ptr->isConstexpr() &&
+          sema.CheckConstexprFunctionDefinition(
+            fd_ptr, clang::Sema::CheckConstexprKind::CheckValid))
         // Rewrite
         rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
     }
@@ -59,7 +65,8 @@ public:
     : compiler_(compiler)
     , in_file_(in_file)
     , constexprer_(
-        clang::Rewriter(compiler.getSourceManager(), compiler.getLangOpts()))
+        clang::Rewriter(compiler.getSourceManager(), compiler.getLangOpts()),
+        compiler_)
   {}
 
   virtual bool HandleTopLevelDecl(clang::DeclGroupRef dg_ref)
