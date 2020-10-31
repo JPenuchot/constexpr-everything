@@ -31,23 +31,35 @@ public:
   // Set the method that gets called for each declaration node in the AST
   bool VisitDecl(clang::Decl* d_ptr)
   {
-    // Safety first
     if (!d_ptr)
-      return true;
+      return false;
 
-    // Is it a function declaration ?
     if (clang::isa<clang::FunctionDecl>(*d_ptr)) {
       auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr);
-      // Is it not constexpr yet ?
       auto& sema = comp_inst_.getSema();
-      if (!fd_ptr->isConstexpr() &&
-          sema.CheckConstexprFunctionDefinition(
-            fd_ptr, clang::Sema::CheckConstexprKind::CheckValid))
-        // Rewrite
-        rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
-    }
 
-    // Proceed
+      if (!fd_ptr->isConstexpr()) {
+        // Throwaway variable for isPotentialConstantExpr
+        llvm::SmallVector<clang::PartialDiagnosticAt, 8> dgs_;
+        if (
+          // First check: basic function definition validation
+          sema.CheckConstexprFunctionDefinition(
+            fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
+          // Second check: check for potential constant expression ourselves;
+          // clang diagnoses it but won't return false because system headers
+          // (see: clang/lib/Sema/SemaDeclCXX.cpp:2334)
+          clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_)) {
+          // Valid: rewrite
+          rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
+        }
+
+        else {
+          // Otherwise: give diagnosis
+          sema.CheckConstexprFunctionDefinition(
+            fd_ptr, clang::Sema::CheckConstexprKind::Diagnose);
+        }
+      }
+    }
     return true;
   }
 
