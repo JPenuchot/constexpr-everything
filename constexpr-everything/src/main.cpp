@@ -17,8 +17,7 @@ static llvm::cl::extrahelp common_help(
   clang::tooling::CommonOptionsParser::HelpMessage);
 static llvm::cl::extrahelp more_help("\nMake everything constexpr.\n");
 
-// Used to re-run the tool until sources don't change
-bool sources_have_changed = false;
+bool source_has_changed = false;
 
 class constexprer_t : public clang::RecursiveASTVisitor<constexprer_t>
 {
@@ -37,9 +36,14 @@ public:
     if (!d_ptr)
       return false;
 
-    if (clang::isa<clang::FunctionDecl>(*d_ptr)) {
+    // Referencing semantics engine
+    auto& sema = comp_inst_.getSema();
+
+    if (clang::isa<clang::FunctionDecl>(d_ptr)) {
       auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr);
-      auto& sema = comp_inst_.getSema();
+
+      if (!fd_ptr->hasBody() || fd_ptr->isMain())
+        return true;
 
       if (!fd_ptr->isConstexpr()) {
         // Throwaway variable for isPotentialConstantExpr
@@ -50,15 +54,17 @@ public:
             fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
           // Second check: check for potential constant expression ourselves;
           // clang diagnoses it but won't return false because system headers
-          // (see: clang/lib/Sema/SemaDeclCXX.cpp:2334)
+          // (see: clang/lib/Sema/SemaDeclCXX.cpp:2345)
           clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
           // Third check: Avoid constexpr loop of DOOM
           !fd_ptr->isMain()) {
           // Valid: rewrite
           rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
-          sources_have_changed = true;
-        }
-        else {
+          // Look for a previous declaration to rewrite
+          auto prev = fd_ptr->getPreviousDecl();
+          if (prev && !prev->isConstexpr())
+            rewriter_.InsertTextBefore(prev->getOuterLocStart(), "constexpr ");
+        } else {
           // Otherwise: give diagnosis
           sema.CheckConstexprFunctionDefinition(
             fd_ptr, clang::Sema::CheckConstexprKind::Diagnose);
@@ -93,7 +99,7 @@ public:
 
     for (clang::Decl* decl_ptr : dg_ref)
       // Rewrite current file only
-      if (sm.getFileID(decl_ptr->getLocation()) == mf_id)
+      if (decl_ptr && sm.getFileID(decl_ptr->getLocation()) == mf_id)
         constexprer_.TraverseDecl(decl_ptr);
 
     return true;
@@ -107,6 +113,7 @@ public:
     clang::CompilerInstance& compiler,
     llvm::StringRef in_file)
   {
+    llvm::outs() << in_file.str() << '\n';
     return std::unique_ptr<clang::ASTConsumer>(
       new consumer_t(compiler, in_file));
   }
@@ -128,16 +135,15 @@ main(int argc, const char** argv)
 
   clt::CommonOptionsParser option_parser(argc, argv, tool_category);
 
-  int ret(0);
+  int res = 0;
   do {
+    source_has_changed = false;
     clt::ClangTool tool(option_parser.getCompilations(),
                         option_parser.getSourcePathList());
 
     action_factory_t factory;
 
-    sources_have_changed = false;
-    ret = tool.run(&factory);
-  } while (sources_have_changed);
-
-  return ret;
+    res = tool.run(&factory);
+  } while (source_has_changed);
+  return res;
 }
