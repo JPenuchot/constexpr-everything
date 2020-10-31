@@ -17,6 +17,9 @@ static llvm::cl::extrahelp common_help(
   clang::tooling::CommonOptionsParser::HelpMessage);
 static llvm::cl::extrahelp more_help("\nMake everything constexpr.\n");
 
+// Used to re-run the tool until sources don't change
+bool sources_have_changed = false;
+
 class constexprer_t : public clang::RecursiveASTVisitor<constexprer_t>
 {
   clang::Rewriter rewriter_;
@@ -51,6 +54,7 @@ public:
           clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_)) {
           // Valid: rewrite
           rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
+          sources_have_changed = true;
         }
 
         else {
@@ -122,10 +126,17 @@ main(int argc, const char** argv)
   namespace clt = clang::tooling;
 
   clt::CommonOptionsParser option_parser(argc, argv, tool_category);
-  clt::ClangTool tool(option_parser.getCompilations(),
-                      option_parser.getSourcePathList());
 
-  action_factory_t factory;
+  int ret(0);
+  do {
+    clt::ClangTool tool(option_parser.getCompilations(),
+                        option_parser.getSourcePathList());
 
-  return tool.run(&factory);
+    action_factory_t factory;
+
+    sources_have_changed = false;
+    ret = tool.run(&factory);
+  } while (sources_have_changed);
+
+  return ret;
 }
