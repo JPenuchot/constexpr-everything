@@ -51,12 +51,13 @@ public:
           // Second check: check for potential constant expression ourselves;
           // clang diagnoses it but won't return false because system headers
           // (see: clang/lib/Sema/SemaDeclCXX.cpp:2334)
-          clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_)) {
+          clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
+          // Third check: Avoid constexpr loop of DOOM
+          !fd_ptr->isMain()) {
           // Valid: rewrite
           rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
           sources_have_changed = true;
         }
-
         else {
           // Otherwise: give diagnosis
           sema.CheckConstexprFunctionDefinition(
