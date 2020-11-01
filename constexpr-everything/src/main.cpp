@@ -17,7 +17,6 @@ static llvm::cl::OptionCategory tool_category("Constexpr-everything Options");
 static llvm::cl::extrahelp common_help(
   clang::tooling::CommonOptionsParser::HelpMessage);
 
-static llvm::cl::opt<bool> recurse_includes("recurse-includes");
 static llvm::cl::opt<bool> diagnose_on_failure("diagnose-on-failure");
 
 bool source_has_changed = false;
@@ -88,17 +87,11 @@ public:
         compiler_)
   {}
 
-  virtual bool HandleTopLevelDecl(clang::DeclGroupRef dg_ref)
+  virtual bool HandleTopLevelDecl(clang::DeclGroupRef dg)
   {
-    auto const& sm = compiler_.getSourceManager();
-    auto const mf_id = sm.getMainFileID();
-
-    for (clang::Decl* decl_ptr : dg_ref) {
-      auto decl_loc = decl_ptr->getLocation();
-      if (sm.getFileID(decl_loc) == mf_id ||
-          (recurse_includes.getValue() && !sm.isInSystemHeader(decl_loc)))
-        constexprer_.TraverseDecl(decl_ptr);
-    }
+    for (clang::Decl* d : dg)
+      if (!compiler_.getSourceManager().isInSystemHeader(d->getLocation()))
+        constexprer_.TraverseDecl(d);
     return true;
   }
 };
@@ -130,13 +123,9 @@ main(int argc, const char** argv)
 {
   namespace clt = clang::tooling;
 
-  recurse_includes.addCategory(tool_category);
-  recurse_includes.setDescription(
-    "Updates includes recursively (unless they're system headers).");
-
   diagnose_on_failure.addCategory(tool_category);
   diagnose_on_failure.setDescription(
-    "Emits diagnosis when a function doesn't meet constexpr requirements.");
+    "Emit a diagnosis when a function doesn't meet constexpr requirements.");
 
   clt::CommonOptionsParser option_parser(argc, argv, tool_category);
 

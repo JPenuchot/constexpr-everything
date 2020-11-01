@@ -68,16 +68,22 @@ Once you did the `git clone --recurse-submodules ...` thing, then:
 
 ```
 ./prepare.sh
-mkdir llvm-project/build
-cd llvm-project/build
-cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra" ../
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra" ../llvm-project/llvm
 make constexpr-everything
 ```
 
-So you can `./constexpr-everything -p build_path/ source_a.cpp source_b.cpp`.
+So you can `constexpr-everything -p build_path/ source_a.cpp source_b.cpp`.
 
 It will add `constexpr` everywhere it should (ie. everywhere it can without
 ever breaking your code).
+
+**Important**: The tool is intended to be run on **source** files, not header
+files, especially if you have function declarations and definitions separated
+across multiple files. It will transform your included files recursively
+(except system headers), so you might want think twice before running this
+tool.
 
 See `--help`:
 
@@ -88,11 +94,10 @@ OPTIONS:
 
 Constexpr-everything Options:
 
-  --diagnose-on-failure       - Emits diagnosis when a function doesn't meet constexpr requirements.
+  --diagnose-on-failure       - Emit a diagnosis when a function doesn't meet constexpr requirements.
   --extra-arg=<string>        - Additional argument to append to the compiler command line
   --extra-arg-before=<string> - Additional argument to prepend to the compiler command line
   -p=<string>                 - Build path
-  --recurse-includes          - Updates includes recursively (unless they're system headers).
 
 Generic Options:
 
