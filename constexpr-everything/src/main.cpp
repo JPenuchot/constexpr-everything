@@ -13,9 +13,12 @@
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed.
 static llvm::cl::OptionCategory tool_category("Constexpr-everything Options");
+
 static llvm::cl::extrahelp common_help(
   clang::tooling::CommonOptionsParser::HelpMessage);
-static llvm::cl::extrahelp more_help("\nMake everything constexpr.\n");
+
+static llvm::cl::opt<bool> update_includes("update-includes");
+static llvm::cl::opt<bool> diagnose_on_failure("diagnose-on-failure");
 
 bool source_has_changed = false;
 
@@ -33,9 +36,6 @@ public:
   // Set the method that gets called for each declaration node in the AST
   bool VisitDecl(clang::Decl* d_ptr)
   {
-    if (!d_ptr)
-      return false;
-
     // Referencing semantics engine
     auto& sema = comp_inst_.getSema();
 
@@ -48,24 +48,18 @@ public:
       if (!fd_ptr->isConstexpr()) {
         // Throwaway variable for isPotentialConstantExpr
         llvm::SmallVector<clang::PartialDiagnosticAt, 8> dgs_;
-        if (
-          // First check: basic function definition validation
-          sema.CheckConstexprFunctionDefinition(
-            fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
-          // Second check: check for potential constant expression ourselves;
-          // clang diagnoses it but won't return false because system headers
-          // (see: clang/lib/Sema/SemaDeclCXX.cpp:2345)
-          clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
-          // Third check: Avoid constexpr loop of DOOM
-          !fd_ptr->isMain()) {
+        if (sema.CheckConstexprFunctionDefinition(
+              fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
+            clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
+            !fd_ptr->isMain()) {
           // Valid: rewrite
           rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
           // Look for a previous declaration to rewrite
           auto prev = fd_ptr->getPreviousDecl();
           if (prev && !prev->isConstexpr())
             rewriter_.InsertTextBefore(prev->getOuterLocStart(), "constexpr ");
-        } else {
-          // Otherwise: give diagnosis
+        } else if (diagnose_on_failure.getValue()) {
+          // Otherwise: give diagnosis if asked to
           sema.CheckConstexprFunctionDefinition(
             fd_ptr, clang::Sema::CheckConstexprKind::Diagnose);
         }
@@ -98,8 +92,8 @@ public:
     auto const mf_id = sm.getMainFileID();
 
     for (clang::Decl* decl_ptr : dg_ref)
-      // Rewrite current file only
-      if (decl_ptr && sm.getFileID(decl_ptr->getLocation()) == mf_id)
+      if (update_includes.getValue() ||
+          sm.getFileID(decl_ptr->getLocation()) == mf_id)
         constexprer_.TraverseDecl(decl_ptr);
 
     return true;
@@ -132,6 +126,13 @@ int
 main(int argc, const char** argv)
 {
   namespace clt = clang::tooling;
+
+  update_includes.addCategory(tool_category);
+  update_includes.setDescription("Updates includes recursively.");
+
+  diagnose_on_failure.addCategory(tool_category);
+  diagnose_on_failure.setDescription(
+    "Emits diagnosis when a function doesn't meet constexpr requirements.");
 
   clt::CommonOptionsParser option_parser(argc, argv, tool_category);
 
