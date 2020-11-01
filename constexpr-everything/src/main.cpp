@@ -17,7 +17,7 @@ static llvm::cl::OptionCategory tool_category("Constexpr-everything Options");
 static llvm::cl::extrahelp common_help(
   clang::tooling::CommonOptionsParser::HelpMessage);
 
-static llvm::cl::opt<bool> update_includes("update-includes");
+static llvm::cl::opt<bool> recurse_includes("recurse-includes");
 static llvm::cl::opt<bool> diagnose_on_failure("diagnose-on-failure");
 
 bool source_has_changed = false;
@@ -50,6 +50,8 @@ public:
         llvm::SmallVector<clang::PartialDiagnosticAt, 8> dgs_;
         if (sema.CheckConstexprFunctionDefinition(
               fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
+            // NB: This check is currently *not*
+            // performed by Sema with CheckValid
             clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
             !fd_ptr->isMain()) {
           // Valid: rewrite
@@ -91,11 +93,12 @@ public:
     auto const& sm = compiler_.getSourceManager();
     auto const mf_id = sm.getMainFileID();
 
-    for (clang::Decl* decl_ptr : dg_ref)
-      if (update_includes.getValue() ||
-          sm.getFileID(decl_ptr->getLocation()) == mf_id)
+    for (clang::Decl* decl_ptr : dg_ref) {
+      auto decl_loc = decl_ptr->getLocation();
+      if (sm.getFileID(decl_loc) == mf_id ||
+          (recurse_includes.getValue() && !sm.isInSystemHeader(decl_loc)))
         constexprer_.TraverseDecl(decl_ptr);
-
+    }
     return true;
   }
 };
@@ -127,8 +130,9 @@ main(int argc, const char** argv)
 {
   namespace clt = clang::tooling;
 
-  update_includes.addCategory(tool_category);
-  update_includes.setDescription("Updates includes recursively.");
+  recurse_includes.addCategory(tool_category);
+  recurse_includes.setDescription(
+    "Updates includes recursively (unless they're system headers).");
 
   diagnose_on_failure.addCategory(tool_category);
   diagnose_on_failure.setDescription(
