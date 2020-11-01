@@ -125,9 +125,6 @@ Generic Options:
   suffix of a path in the compile command database.
 ```
 
-### Notes
-
-- `compile_commands.json` shoud be present in the build directory specified
-with `-p` and can be generated with `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`.
-
-- Making your functions constexpr will make them inline as well.
+`compile_commands.json` shoud be present in the build directory specified with
+`-p` and can be generated with `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`,
+or by using [Bear](https://github.com/rizsotto/Bear) with other build systems.
