@@ -48,6 +48,9 @@ public:
       auto rewrite_decl = [&](clang::FunctionDecl* p) {
         // Making sure we're not looking at a macro expansion
         auto loc = sm.getImmediateMacroCallerLoc(p->getBeginLoc());
+        if (sm.isInSystemHeader(loc))
+          return;
+        source_has_changed = true;
         llvm::outs() << loc.printToString(sm) << '\n';
         rewriter_.InsertTextBefore(loc, "constexpr ");
         p->setConstexprKind(clang::CSK_constexpr);
@@ -59,8 +62,7 @@ public:
         // won't return false if the function isn't potentially constexpr
         // to ensure compatibility with system headers
         llvm::SmallVector<clang::PartialDiagnosticAt, 8> throwaway;
-        if (!fd_ptr->isMain() &&
-            sema.CheckConstexprFunctionDefinition(
+        if (sema.CheckConstexprFunctionDefinition(
               fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
             clang::Expr::isPotentialConstantExpr(fd_ptr, throwaway)) {
 
@@ -69,7 +71,6 @@ public:
           rewrite_decl(fd_ptr);
           if (prev)
             rewrite_decl(prev);
-          source_has_changed = true;
         } else if (diagnose_on_failure.getValue()) {
           // Otherwise: print diagnosis if asked to
           sema.CheckConstexprFunctionDefinition(
