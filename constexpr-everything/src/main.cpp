@@ -44,7 +44,7 @@ public:
       if (!fd_ptr->hasBody() || fd_ptr->isMain())
         return true;
 
-      if (!fd_ptr->isConstexpr()) {
+      if (fd_ptr->getConstexprKind() == clang::CSK_unspecified) {
         // Throwaway variable for isPotentialConstantExpr
         llvm::SmallVector<clang::PartialDiagnosticAt, 8> dgs_;
         if (sema.CheckConstexprFunctionDefinition(
@@ -55,10 +55,13 @@ public:
             !fd_ptr->isMain()) {
           // Valid: rewrite
           rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
+          fd_ptr->setConstexprKind(clang::CSK_constexpr);
           // Look for a previous declaration to rewrite
-          auto prev = fd_ptr->getPreviousDecl();
-          if (prev && !prev->isConstexpr())
+          clang::FunctionDecl* prev = fd_ptr->getPreviousDecl();
+          if (prev && prev->getConstexprKind() == clang::CSK_unspecified) {
             rewriter_.InsertTextBefore(prev->getOuterLocStart(), "constexpr ");
+            prev->setConstexprKind(clang::CSK_constexpr);
+          }
         } else if (diagnose_on_failure.getValue()) {
           // Otherwise: give diagnosis if asked to
           sema.CheckConstexprFunctionDefinition(
