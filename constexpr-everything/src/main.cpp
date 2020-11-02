@@ -37,6 +37,7 @@ public:
   {
     // Referencing semantics engine
     auto& sema = comp_inst_.getSema();
+    auto& sm = comp_inst_.getSourceManager();
 
     if (clang::isa<clang::FunctionDecl>(d_ptr)) {
       auto fd_ptr = clang::cast<clang::FunctionDecl>(d_ptr);
@@ -44,26 +45,33 @@ public:
       if (!fd_ptr->hasBody() || fd_ptr->isMain())
         return true;
 
+      auto rewrite_decl = [&](clang::FunctionDecl* p) {
+        // Making sure we're not looking at a macro expansion
+        auto loc = sm.getImmediateMacroCallerLoc(p->getBeginLoc());
+        llvm::outs() << loc.printToString(sm) << '\n';
+        rewriter_.InsertTextBefore(loc, "constexpr ");
+        p->setConstexprKind(clang::CSK_constexpr);
+      };
+
       if (fd_ptr->getConstexprKind() == clang::CSK_unspecified) {
-        // Throwaway variable for isPotentialConstantExpr
-        llvm::SmallVector<clang::PartialDiagnosticAt, 8> dgs_;
-        if (sema.CheckConstexprFunctionDefinition(
+
+        // Performing double check because CheckConstexprFunctionDefinition
+        // won't return false if the function isn't potentially constexpr
+        // to ensure compatibility with system headers
+        llvm::SmallVector<clang::PartialDiagnosticAt, 8> throwaway;
+        if (!fd_ptr->isMain() &&
+            sema.CheckConstexprFunctionDefinition(
               fd_ptr, clang::Sema::CheckConstexprKind::CheckValid) &&
-            // NB: This check is currently *not*
-            // performed by Sema with CheckValid
-            clang::Expr::isPotentialConstantExpr(fd_ptr, dgs_) &&
-            !fd_ptr->isMain()) {
-          // Valid: rewrite
-          rewriter_.InsertTextBefore(fd_ptr->getOuterLocStart(), "constexpr ");
-          fd_ptr->setConstexprKind(clang::CSK_constexpr);
-          // Look for a previous declaration to rewrite
+            clang::Expr::isPotentialConstantExpr(fd_ptr, throwaway)) {
+
+          // Rewrite current declaration and its previous declaration
           clang::FunctionDecl* prev = fd_ptr->getPreviousDecl();
-          if (prev && prev->getConstexprKind() == clang::CSK_unspecified) {
-            rewriter_.InsertTextBefore(prev->getOuterLocStart(), "constexpr ");
-            prev->setConstexprKind(clang::CSK_constexpr);
-          }
+          rewrite_decl(fd_ptr);
+          if (prev)
+            rewrite_decl(prev);
+          source_has_changed = true;
         } else if (diagnose_on_failure.getValue()) {
-          // Otherwise: give diagnosis if asked to
+          // Otherwise: print diagnosis if asked to
           sema.CheckConstexprFunctionDefinition(
             fd_ptr, clang::Sema::CheckConstexprKind::Diagnose);
         }
@@ -106,7 +114,6 @@ public:
     clang::CompilerInstance& compiler,
     llvm::StringRef in_file)
   {
-    llvm::outs() << in_file.str() << '\n';
     return std::unique_ptr<clang::ASTConsumer>(
       new consumer_t(compiler, in_file));
   }
@@ -130,10 +137,10 @@ main(int argc, const char** argv)
   diagnose_on_failure.setDescription(
     "Emit a diagnosis when a function doesn't meet constexpr requirements.");
 
-  clt::CommonOptionsParser option_parser(argc, argv, tool_category);
-
   int res = 0;
   do {
+    clt::CommonOptionsParser option_parser(argc, argv, tool_category);
+
     source_has_changed = false;
     clt::ClangTool tool(option_parser.getCompilations(),
                         option_parser.getSourcePathList());
