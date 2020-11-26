@@ -1,4 +1,4 @@
-# Constexpr everything
+# Constexpr everything: Reloaded
 
 I mean, really. Constexpr everything.
 
@@ -12,8 +12,11 @@ For example:
 
 ```cpp
 #include <type_traits>
+#include <cstdlib>
 
 template <typename T> int temp() { return 43; }
+
+int foo();
 
 int foo() {
   if (!std::is_constant_evaluated())
@@ -39,8 +42,11 @@ becomes:
 
 ```cpp
 #include <type_traits>
+#include <cstdlib>
 
 template <typename T> constexpr int temp() { return 43; }
+
+constexpr int foo();
 
 constexpr int foo() {
   if (!std::is_constant_evaluated())
@@ -79,11 +85,14 @@ So you can `constexpr-everything -p build_path/ source_a.cpp source_b.cpp`.
 It will add `constexpr` everywhere it should (ie. everywhere it can without
 ever breaking your code).
 
-**Important**: The tool is intended to be run on **source** files, not header
-files, especially if you have function declarations and definitions separated
-across multiple files. It will transform your included files recursively
-(except system headers), so you might want think twice before running this
-tool.
+It is preferable that you run this tool on `.cpp` files or a top-level header
+file that includes your whole library. Here's why:
+
+- The tool preprocesses your files before processing them, which means it also
+processes headers recursively.
+- If a function has separate declaration and definition, it will process its
+body *and then* go back to the declaration. They can be in separate headers,
+but both must be visible in a given source file.
 
 See `--help`:
 
@@ -128,3 +137,7 @@ Generic Options:
 `compile_commands.json` shoud be present in the build directory specified with
 `-p` and can be generated with `cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`,
 or by using [Bear](https://github.com/rizsotto/Bear) with other build systems.
+
+# Credits
+
+The project was renamed `constexpr-everything-reloaded` since there *already is* a [`constexpr-everything`](https://github.com/trailofbits/constexpr-everything/) doing the same thing. As much as I didn't know about this project, I should have looked up that name before.
